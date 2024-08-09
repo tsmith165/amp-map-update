@@ -1,4 +1,5 @@
-const fs = require('fs');
+const fs = require('fs').promises;
+const { exec } = require('child_process');
 const { Client } = require('pg');
 require('dotenv').config();
 
@@ -21,39 +22,23 @@ async function connectToDatabase() {
 
 async function checkForQueuedMapChanges() {
     try {
-        // Query next_wipe_info table
-        const nextWipeInfoQuery = `
-            SELECT server_id, level_url
-            FROM next_wipe_info
-            WHERE is_queued = true
+        const query = `
+            SELECT nwi.server_id, nwi.level_url, sbi.server_folder
+            FROM next_wipe_info nwi
+            JOIN server_backend_info sbi ON nwi.server_id = sbi.server_id
+            WHERE nwi.is_queued = true
         `;
-        const nextWipeInfoResult = await client.query(nextWipeInfoQuery);
+        const result = await client.query(query);
 
-        if (nextWipeInfoResult.rows.length === 0) {
+        if (result.rows.length === 0) {
             console.log('No servers found queued for map changes.');
             return;
         }
 
-        console.log(`Found ${nextWipeInfoResult.rows.length} server(s) queued for map changes.`);
+        console.log(`Found ${result.rows.length} server(s) queued for map changes.`);
 
-        for (const row of nextWipeInfoResult.rows) {
-            const { server_id, level_url } = row;
-
-            // Query server_backend_info table
-            const serverBackendInfoQuery = `
-                SELECT server_folder
-                FROM server_backend_info
-                WHERE server_id = $1
-            `;
-            const serverBackendInfoResult = await client.query(serverBackendInfoQuery, [server_id]);
-
-            if (serverBackendInfoResult.rows.length === 0) {
-                console.error(`No server_backend_info found for server_id: ${server_id}`);
-                continue;
-            }
-
-            const { server_folder } = serverBackendInfoResult.rows[0];
-            await updateMapForServer(server_id, level_url, server_folder);
+        for (const row of result.rows) {
+            await updateMapForServer(row.server_id, row.level_url, row.server_folder);
         }
     } catch (err) {
         console.error('Error checking for queued map changes:', err);
@@ -70,7 +55,7 @@ async function updateMapForServer(serverId, levelUrl, serverFolder) {
     try {
         // Read the file
         console.log(`Reading file: ${filePath}`);
-        let data = await fs.promises.readFile(filePath, 'utf8');
+        let data = await fs.readFile(filePath, 'utf8');
 
         // Update the Rust.LevelUrl line
         const regex = /^Rust\.LevelUrl=.*/m;
@@ -81,13 +66,21 @@ async function updateMapForServer(serverId, levelUrl, serverFolder) {
 
         // Write the updated content back to the file
         console.log('Writing updated content to file');
-        await fs.promises.writeFile(filePath, data, 'utf8');
+        await fs.writeFile(filePath, data, 'utf8');
 
         // Verify the change
         console.log('Verifying the change');
-        const updatedData = await fs.promises.readFile(filePath, 'utf8');
+        const updatedData = await fs.readFile(filePath, 'utf8');
         if (updatedData.includes(`Rust.LevelUrl=${levelUrl}`)) {
             console.log(`Successfully updated map for server ${serverId}`);
+
+            // Wait for 5 seconds
+            await new Promise((resolve) => setTimeout(resolve, 5000));
+
+            // Restart the AMP instance
+            console.log(`Restarting AMP instance for server folder: ${serverFolder}`);
+            await restartAMPInstance(serverFolder);
+
             await updateQueueStatus(serverId, false);
         } else {
             console.error(`Failed to update map for server ${serverId}`);
@@ -97,6 +90,23 @@ async function updateMapForServer(serverId, levelUrl, serverFolder) {
     } catch (err) {
         console.error(`Error updating map for server ${serverId}:`, err);
     }
+}
+
+async function restartAMPInstance(serverFolder) {
+    return new Promise((resolve, reject) => {
+        exec(`ampinstmgr -r ${serverFolder}`, (error, stdout, stderr) => {
+            if (error) {
+                console.error(`Error restarting AMP instance: ${error}`);
+                reject(error);
+                return;
+            }
+            if (stderr) {
+                console.error(`stderr: ${stderr}`);
+            }
+            console.log(`stdout: ${stdout}`);
+            resolve();
+        });
+    });
 }
 
 async function updateQueueStatus(serverId, isQueued) {
@@ -116,12 +126,8 @@ async function updateQueueStatus(serverId, isQueued) {
 async function main() {
     await connectToDatabase();
 
-    console.log('Starting map change monitor');
     // Run the check every 15 seconds
-    setInterval(async () => {
-        console.log('Checking for queued map changes...');
-        await checkForQueuedMapChanges();
-    }, 15000);
+    setInterval(checkForQueuedMapChanges, 15000);
 }
 
 main().catch(console.error);
