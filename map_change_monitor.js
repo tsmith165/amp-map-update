@@ -21,23 +21,39 @@ async function connectToDatabase() {
 
 async function checkForQueuedMapChanges() {
     try {
-        const query = `
-            SELECT nwi.server_id, nwi.level_url, sbi.server_folder
-            FROM next_wipe_info nwi
-            JOIN server_backend_info sbi ON nwi.server_id = sbi.server_id
-            WHERE nwi.is_queued = true
+        // Query next_wipe_info table
+        const nextWipeInfoQuery = `
+            SELECT server_id, level_url
+            FROM next_wipe_info
+            WHERE is_queued = true
         `;
-        const result = await client.query(query);
+        const nextWipeInfoResult = await client.query(nextWipeInfoQuery);
 
-        if (result.rows.length === 0) {
+        if (nextWipeInfoResult.rows.length === 0) {
             console.log('No servers found queued for map changes.');
             return;
         }
 
-        console.log(`Found ${result.rows.length} server(s) queued for map changes.`);
+        console.log(`Found ${nextWipeInfoResult.rows.length} server(s) queued for map changes.`);
 
-        for (const row of result.rows) {
-            await updateMapForServer(row.server_id, row.level_url, row.server_folder);
+        for (const row of nextWipeInfoResult.rows) {
+            const { server_id, level_url } = row;
+
+            // Query server_backend_info table
+            const serverBackendInfoQuery = `
+                SELECT server_folder
+                FROM server_backend_info
+                WHERE server_id = $1
+            `;
+            const serverBackendInfoResult = await client.query(serverBackendInfoQuery, [server_id]);
+
+            if (serverBackendInfoResult.rows.length === 0) {
+                console.error(`No server_backend_info found for server_id: ${server_id}`);
+                continue;
+            }
+
+            const { server_folder } = serverBackendInfoResult.rows[0];
+            await updateMapForServer(server_id, level_url, server_folder);
         }
     } catch (err) {
         console.error('Error checking for queued map changes:', err);
