@@ -1,6 +1,6 @@
 # Amp Map Update
 
-This Node.js script monitors for queued map updates and edits the RustModule.kvp file to set the map to be chagned on next restart.
+This Node.js script monitors for queued map updates and edits the RustModule.kvp file to set the map to be changed on next restart.
 
 ## Prerequisites
 
@@ -47,11 +47,12 @@ This Node.js script monitors for queued map updates and edits the RustModule.kvp
 
 ## Setup
 
-1. Clone this repository:
+1. Create the scripts directory and clone the repository:
 
     ```
-    mkdir /root/scripts
-    cd /root/scripts
+    sudo mkdir -p /opt/scripts
+    sudo chown amp:amp /opt/scripts
+    cd /opt/scripts
     git clone https://github.com/tsmith165/amp-map-update.git
     cd amp-map-update
     ```
@@ -66,6 +67,7 @@ This Node.js script monitors for queued map updates and edits the RustModule.kvp
 
     ```
     cp .env.example .env
+    nano .env
     ```
 
 4. Edit the `.env` file with your actual database URL.
@@ -75,41 +77,60 @@ This Node.js script monitors for queued map updates and edits the RustModule.kvp
 To run the script manually:
 
 ```
-npm start
+node map_change_monitor.js
 ```
 
 ## Setting up as a System Service
 
 To run the script as a system service that starts on boot and restarts on failure:
 
-1. Copy the `map-change-monitor.service` file to the systemd directory:
-
-    ```
-    sudo cp map-change-monitor.service /etc/systemd/system/
-    ```
-
-2. Edit the service file to set the correct paths and user:
+1. Create the service file:
 
     ```
     sudo nano /etc/systemd/system/map-change-monitor.service
     ```
 
-    Update the `ExecStart`, `User`, and `WorkingDirectory` fields as necessary.
+2. Add the following content to the service file:
 
-3. Reload the systemd daemon:
+    ```
+    [Unit]
+    Description=Map Change Monitor
+    After=network.target
+
+    [Service]
+    ExecStart=/usr/bin/node /opt/scripts/amp-map-update/map_change_monitor.js
+    Restart=always
+    User=amp
+    Environment=PATH=/usr/bin:/usr/local/bin
+    Environment=NODE_ENV=production
+    WorkingDirectory=/opt/scripts/amp-map-update
+
+    [Install]
+    WantedBy=multi-user.target
+    ```
+
+3. Save and close the file.
+
+4. Set the correct permissions for the script directory:
+
+    ```
+    sudo chown -R amp:amp /opt/scripts/amp-map-update
+    ```
+
+5. Reload the systemd daemon:
 
     ```
     sudo systemctl daemon-reload
     ```
 
-4. Enable and start the service:
+6. Enable and start the service:
 
     ```
     sudo systemctl enable map-change-monitor.service
     sudo systemctl start map-change-monitor.service
     ```
 
-5. Check the status of the service:
+7. Check the status of the service:
     ```
     sudo systemctl status map-change-monitor.service
     ```
@@ -119,8 +140,30 @@ To run the script as a system service that starts on boot and restarts on failur
 To view the logs of the service:
 
 ```
-sudo journalctl -u map-change-monitor.service
+sudo journalctl -u map-change-monitor -f
 ```
+
+This will show you the live logs. Press Ctrl+C to exit.
+
+## Troubleshooting
+
+If you encounter any issues:
+
+1. Check the logs for any error messages:
+
+    ```
+    sudo journalctl -u map-change-monitor -e
+    ```
+
+2. Ensure all file permissions are correct:
+
+    ```
+    sudo chown -R amp:amp /opt/scripts/amp-map-update
+    ```
+
+3. Verify that the .env file contains the correct database URL.
+
+4. Make sure Node.js and npm are installed correctly and accessible to the amp user.
 
 ## License
 
