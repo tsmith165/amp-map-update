@@ -1,0 +1,15 @@
+{
+    "name": "amp-map-update",
+    "version": "1.0.0",
+    "description": "A Node.js script to monitor for queued map changes and update the RustModule.kvp file to set the map to be changed on next restart.",
+    "main": "amp_change_monitor.js",
+    "scripts": {
+        "start": "node map_change_monitor.js"
+    },
+    "dependencies": {
+        "pg": "^8.7.1",
+        "dotenv": "^10.0.0"
+    },
+    "author": "tsmith165",
+    "license": "MIT"
+}

@@ -1,0 +1,14 @@
+[Unit]
+Description=Map Change Monitor
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/node /root/scripts/amp-map-update/map_change_monitor.js
+Restart=always
+User=amp
+Environment=PATH=/usr/bin:/usr/local/bin
+Environment=NODE_ENV=production
+WorkingDirectory=/root/scripts/amp-map-update/
+
+[Install]
+WantedBy=multi-user.target
